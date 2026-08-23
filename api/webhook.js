@@ -1,12 +1,11 @@
 import crypto from 'crypto'
 
-// disable auto body parsing so we can hash the exact raw bytes
 export const config = { api: { bodyParser: false } }
 
 function readRawBody(req) {
   return new Promise((resolve, reject) => {
     let data = ''
-    req.on('data', chunk => { data += chunk })
+    req.on('data', c => { data += c })
     req.on('end', () => resolve(data))
     req.on('error', reject)
   })
@@ -18,28 +17,18 @@ export default async function handler(req, res) {
 
   const timestamp = req.headers['x-timestamp']
   const signature = req.headers['x-signature']
-  if (!timestamp || !signature) {
-    return res.status(400).send('zaml')
-  }
+  if (!timestamp || !signature) return res.status(400).send('zaml')
 
   const age = Math.abs(Date.now() / 1000 - parseInt(timestamp))
-  if (Number.isNaN(age) || age > 300) {
-    return res.status(400).send('zaml')
-  }
+  if (Number.isNaN(age) || age > 300) return res.status(400).send('zaml')
 
   const rawBody = await readRawBody(req)
-  const signingString = `${timestamp}.${rawBody}`
+
+  // verify HMAC over the raw wrapper body (ciphertext)
   const expected = crypto
     .createHmac('sha256', process.env.SECRET_KEY)
-    .update(signingString)
+    .update(`${timestamp}.${rawBody}`)
     .digest('base64')
-
-  // --- TEMP DEBUG: remove once verified ---
-  console.log('SERVER expected:', expected)
-  console.log('CLIENT sent    :', signature)
-  console.log('signing string :', signingString)
-  console.log('secret loaded  :', process.env.SECRET_KEY ? 'yes len=' + process.env.SECRET_KEY.length : 'MISSING')
-  // ----------------------------------------
 
   const a = Buffer.from(expected)
   const b = Buffer.from(signature)
@@ -47,10 +36,20 @@ export default async function handler(req, res) {
     return res.status(403).send('Bad request')
   }
 
+  // parse wrapper, then decrypt the embed JSON
+  let wrapper
+  try { wrapper = JSON.parse(rawBody) } catch { return res.status(400).send('zaml') }
+
   let parsed
   try {
-    parsed = JSON.parse(rawBody)
-  } catch {
+    const key = Buffer.from(process.env.ENC_KEY)          // 32 chars -> 32 bytes -> AES-256
+    const iv = Buffer.from(wrapper.iv, 'base64')
+    const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv)
+    let dec = decipher.update(wrapper.data, 'base64', 'utf8')
+    dec += decipher.final('utf8')
+    parsed = JSON.parse(dec)
+  } catch (e) {
+    console.error('decrypt failed:', e.message)
     return res.status(400).send('zaml')
   }
 
