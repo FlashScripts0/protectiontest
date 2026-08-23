@@ -24,25 +24,24 @@ export default async function handler(req, res) {
 
   const rawBody = await readRawBody(req)
 
-  // verify HMAC over the raw wrapper body (ciphertext)
+  // verify HMAC over the raw wrapper body
   const expected = crypto
     .createHmac('sha256', process.env.SECRET_KEY)
     .update(`${timestamp}.${rawBody}`)
     .digest('base64')
-
   const a = Buffer.from(expected)
   const b = Buffer.from(signature)
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
     return res.status(403).send('Bad request')
   }
 
-  // parse wrapper, then decrypt the embed JSON
+  // parse wrapper, AES-256-CBC decrypt
   let wrapper
   try { wrapper = JSON.parse(rawBody) } catch { return res.status(400).send('zaml') }
 
   let parsed
   try {
-    const key = Buffer.from(process.env.ENC_KEY)          // 32 chars -> 32 bytes -> AES-256
+    const key = Buffer.from(process.env.ENC_KEY)          // 32 chars -> AES-256
     const iv = Buffer.from(wrapper.iv, 'base64')
     const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv)
     let dec = decipher.update(wrapper.data, 'base64', 'utf8')
