@@ -24,7 +24,6 @@ export default async function handler(req, res) {
 
   const rawBody = await readRawBody(req)
 
-  // verify HMAC over the raw wrapper body
   const expected = crypto
     .createHmac('sha256', process.env.SECRET_KEY)
     .update(`${timestamp}.${rawBody}`)
@@ -35,7 +34,6 @@ export default async function handler(req, res) {
     return res.status(403).send('Bad request')
   }
 
-  // parse wrapper, AES-256-CBC decrypt
   let wrapper
   try { wrapper = JSON.parse(rawBody) } catch { return res.status(400).send('zaml') }
 
@@ -52,14 +50,30 @@ export default async function handler(req, res) {
     return res.status(400).send('zaml')
   }
 
-  const { embeds, content } = parsed
+  const { embeds, content, avatar_url, message_id } = parsed
   if (!embeds) return res.status(400).send('zaml')
 
-  await fetch(process.env.DISCORD_WEBHOOK_URL, {
+  const base = process.env.DISCORD_WEBHOOK_URL
+
+  // edit an existing message
+  if (message_id) {
+    await fetch(`${base}/messages/${message_id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ embeds })
+    })
+    return res.status(200).json({ ok: true })
+  }
+
+  // new message — ?wait=true so Discord returns the created message (with its id)
+  const r = await fetch(`${base}?wait=true`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content: content || '', embeds })
+    body: JSON.stringify({ content: content || '', embeds, avatar_url })
   })
 
-  return res.status(200).json({ ok: true })
+  let id = null
+  try { id = (await r.json()).id } catch {}
+
+  return res.status(200).json({ ok: true, id })
 }
