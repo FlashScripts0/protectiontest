@@ -13,14 +13,14 @@ function readRawBody(req) {
 
 export default async function handler(req, res) {
   if (req.method === 'GET') return res.status(200).send('OK')
-  if (req.method !== 'POST') return res.status(405).send('zaml')
+  if (req.method !== 'POST') return res.status(405).send('gay')
 
   const timestamp = req.headers['x-timestamp']
   const signature = req.headers['x-signature']
-  if (!timestamp || !signature) return res.status(400).send('zaml')
+  if (!timestamp || !signature) return res.status(400).send('gay')
 
   const age = Math.abs(Date.now() / 1000 - parseInt(timestamp))
-  if (Number.isNaN(age) || age > 300) return res.status(400).send('zaml')
+  if (Number.isNaN(age) || age > 300) return res.status(400).send('gay')
 
   const rawBody = await readRawBody(req)
 
@@ -35,7 +35,7 @@ export default async function handler(req, res) {
   }
 
   let wrapper
-  try { wrapper = JSON.parse(rawBody) } catch { return res.status(400).send('zaml') }
+  try { wrapper = JSON.parse(rawBody) } catch { return res.status(400).send('gay') }
 
   let parsed
   try {
@@ -47,11 +47,11 @@ export default async function handler(req, res) {
     parsed = JSON.parse(dec)
   } catch (e) {
     console.error('decrypt failed:', e.message)
-    return res.status(400).send('zaml')
+    return res.status(400).send('gay')
   }
 
   const { embeds, content, avatar_url, message_id } = parsed
-  if (!embeds) return res.status(400).send('zaml')
+  if (!embeds) return res.status(400).send('gay')
 
   const base = process.env.DISCORD_WEBHOOK_URL
 
