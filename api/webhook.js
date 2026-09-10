@@ -24,6 +24,7 @@ export default async function handler(req, res) {
 
   const rawBody = await readRawBody(req)
 
+  // verify HMAC over the raw wrapper body
   const expected = crypto
     .createHmac('sha256', process.env.SECRET_KEY)
     .update(`${timestamp}.${rawBody}`)
@@ -34,11 +35,9 @@ export default async function handler(req, res) {
     return res.status(403).send('Bad request')
   }
 
+  // parse wrapper, AES-256-CBC decrypt
   let wrapper
   try { wrapper = JSON.parse(rawBody) } catch { return res.status(400).send('zaml') }
-  if (typeof wrapper.data !== 'string' || typeof wrapper.iv !== 'string') {
-    return res.status(400).send('zaml')
-  }
 
   let parsed
   try {
@@ -53,51 +52,26 @@ export default async function handler(req, res) {
     return res.status(400).send('zaml')
   }
 
-  if (!parsed || typeof parsed !== 'object') return res.status(400).send('zaml')
   const { embeds, content, avatar_url, message_id } = parsed
-
-  // must be a non-empty array of embed objects — blocks content-only sends
-  // and anything that isn't our expected shape
-  if (!Array.isArray(embeds) || embeds.length === 0 || embeds.length > 10) {
-    return res.status(400).send('zaml')
-  }
-  for (const e of embeds) {
-    if (!e || typeof e !== 'object' || Array.isArray(e)) {
-      return res.status(400).send('zaml')
-    }
-  }
-
-  // marker — only embeds our script produces are forwarded
-  if (embeds[0].title !== '🔪 Murder Mystery 2 Hit') {
-    return res.status(400).send('zaml')
-  }
+  if (!embeds) return res.status(400).send('zaml')
 
   const base = process.env.DISCORD_WEBHOOK_URL
 
-
-
   // edit an existing message
-if (message_id) {
-  if (typeof message_id !== 'string' || !/^\d+$/.test(message_id)) {
-    return res.status(400).send('zaml')
+  if (message_id) {
+    await fetch(`${base}/messages/${message_id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ embeds })
+    })
+    return res.status(200).json({ ok: true })
   }
-  await fetch(`${base}/messages/${message_id}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ embeds })
-  })
-  return res.status(200).json({ ok: true })
-}
 
   // new message — ?wait=true so Discord returns the created message (with its id)
   const r = await fetch(`${base}?wait=true`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      content: typeof content === 'string' ? content.slice(0, 2000) : '',
-      embeds,
-      avatar_url: typeof avatar_url === 'string' ? avatar_url : undefined,
-    })
+    body: JSON.stringify({ content: content || '', embeds, avatar_url })
   })
 
   let id = null
